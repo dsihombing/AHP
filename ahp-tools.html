@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AHP DSS Tool - Denny JC Sihombing</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        :root { --primary: #1e40af; --accent: #3b82f6; --success: #15803d; --danger: #b91c1c; --bg: #f1f5f9; }
+        body { font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background: var(--bg); color: #334155; padding: 40px 20px; line-height: 1.6; }
+        .container { max-width: 1100px; margin: auto; background: white; padding: 35px; border-radius: 15px; box-shadow: 0 10px 25px rgba(0,0,0,0.05); }
+        
+        header { text-align: center; border-bottom: 3px solid var(--primary); margin-bottom: 30px; padding-bottom: 20px; }
+        header h1 { margin: 0; color: var(--primary); font-size: 28px; text-transform: uppercase; }
+        header p { margin: 5px 0 0; font-style: italic; color: #64748b; }
+
+        .card { border: 1px solid #e2e8f0; border-radius: 10px; padding: 20px; margin-bottom: 25px; transition: 0.3s; }
+        .card:hover { border-color: var(--accent); }
+        .card h3 { margin-top: 0; color: var(--primary); display: flex; align-items: center; gap: 10px; }
+        
+        .input-row { display: grid; grid-template-columns: 1fr 1fr auto; gap: 15px; margin-bottom: 15px; }
+        input[type="text"] { width: 100%; padding: 12px; border: 1px solid #cbd5e1; border-radius: 6px; box-sizing: border-box; }
+        
+        button { background: var(--primary); color: white; padding: 12px 24px; border: none; border-radius: 6px; cursor: pointer; font-weight: 600; transition: background 0.2s; }
+        button:hover { background: var(--accent); }
+        
+        table { width: 100%; border-collapse: collapse; margin: 20px 0; background: #fff; }
+        th, td { border: 1px solid #e2e8f0; padding: 12px; text-align: center; }
+        th { background: #f8fafc; color: var(--primary); font-weight: 600; }
+        .matrix-input { width: 65px; padding: 6px; text-align: center; border: 1px solid #ddd; border-radius: 4px; }
+
+        .badge { padding: 5px 12px; border-radius: 20px; font-size: 12px; font-weight: bold; text-transform: uppercase; }
+        .badge-ok { background: #dcfce7; color: var(--success); }
+        .badge-fail { background: #fee2e2; color: var(--danger); }
+
+        .footer { text-align: center; margin-top: 40px; font-size: 13px; color: #94a3b8; }
+        .footer a { color: var(--primary); text-decoration: none; font-weight: bold; }
+        
+        .hidden { display: none; }
+        #chartWrapper { max-width: 800px; margin: 30px auto; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <header>
+        <h1>Decision Support System: AHP</h1>
+        <p>Developed by Denny Jean Cross Sihombing</p>
+    </header>
+
+    <section class="card">
+        <h3>1. Inisialisasi Kriteria & Alternatif</h3>
+        <div class="input-row">
+            <input type="text" id="critInput" placeholder="Kriteria (cth: Harga, Kualitas, Lokasi)">
+            <input type="text" id="altInput" placeholder="Alternatif (cth: Vendor A, Vendor B, Vendor C)">
+            <button onclick="setupAHP()">Proses Matriks</button>
+        </div>
+        <small>*Pisahkan antar item dengan tanda koma (,)</small>
+    </section>
+
+    <section id="critSection" class="card hidden">
+        <h3>2. Perbandingan Berpasangan Kriteria</h3>
+        <div id="critMatrixDiv"></div>
+        <div id="critStatus" style="margin: 15px 0;"></div>
+        <button onclick="processCriteria()">Kunci Bobot Kriteria</button>
+    </section>
+
+    <section id="altSection" class="card hidden">
+        <h3>3. Perbandingan Alternatif: <span id="activeCritName" style="text-decoration: underline;"></span></h3>
+        <div id="altMatrixDiv"></div>
+        <button onclick="processAlternativeStep()">Simpan Bobot Alternatif</button>
+    </section>
+
+    <section id="finalSection" class="card hidden">
+        <h3>4. Hasil Akhir (Ranking)</h3>
+        <div id="finalResultDiv"></div>
+        <div id="chartWrapper">
+            <canvas id="rankingChart"></canvas>
+        </div>
+        <div style="text-align: center; margin-top: 20px;">
+            <button onclick="window.print()" style="background: #64748b;">Cetak Laporan</button>
+            <button onclick="location.reload()" style="background: #94a3b8;">Reset Analisis</button>
+        </div>
+    </section>
+
+    <div class="footer">
+        &copy; 2025 <strong>Denny Jean Cross Sihombing</strong> | 
+        Explore more: <a href="https://dsihombing.github.io" target="_blank">dsihombing.github.io</a>
+    </div>
+</div>
+
+<script>
+    /**
+     * CORE LOGIC BY DENNY JC SIHOMBING
+     */
+    let data = {
+        criteria: [],
+        alternatives: [],
+        critWeights: [],
+        altWeightsMatrix: [], // Array of arrays
+        currentCritIdx: 0,
+        ri: [0, 0, 0.58, 0.90, 1.12, 1.24, 1.32, 1.41, 1.45, 1.49]
+    };
+
+    function setupAHP() {
+        data.criteria = document.getElementById('critInput').value.split(',').map(s => s.trim()).filter(s => s);
+        data.alternatives = document.getElementById('altInput').value.split(',').map(s => s.trim()).filter(s => s);
+
+        if (data.criteria.length < 2 || data.alternatives.length < 2) {
+            alert("Harap masukkan minimal 2 kriteria dan 2 alternatif.");
+            return;
+        }
+
+        renderPairwiseMatrix('critMatrixDiv', data.criteria, 'c');
+        document.getElementById('critSection').classList.remove('hidden');
+    }
+
+    function renderPairwiseMatrix(containerId, list, prefix) {
+        const n = list.length;
+        let html = `<table><tr><th></th>`;
+        list.forEach(item => html += `<th>${item}</th>`);
+        html += `</tr>`;
+
+        for (let i = 0; i < n; i++) {
+            html += `<tr><td><strong>${list[i]}</strong></td>`;
+            for (let j = 0; j < n; j++) {
+                let id = `${prefix}_${i}_${j}`;
+                if (i === j) {
+                    html += `<td><input class="matrix-input" id="${id}" value="1" disabled></td>`;
+                } else if (i < j) {
+                    html += `<td><input type="number" step="0.1" class="matrix-input" id="${id}" value="1" onchange="syncReciprocal('${prefix}', ${i}, ${j}, this.value)"></td>`;
+                } else {
+                    html += `<td><input class="matrix-input" id="${id}" value="1" disabled></td>`;
+                }
+            }
+            html += `</tr>`;
+        }
+        html += `</table>`;
+        document.getElementById(containerId).innerHTML = html;
+    }
+
+    function syncReciprocal(prefix, i, j, val) {
+        const rec = (1 / parseFloat(val)).toFixed(3);
+        document.getElementById(`${prefix}_${j}_${i}`).value = rec;
+    }
+
+    function calculateAHP(prefix, n) {
+        let matrix = [];
+        for (let i = 0; i < n; i++) {
+            matrix[i] = [];
+            for (let j = 0; j < n; j++) {
+                matrix[i][j] = parseFloat(document.getElementById(`${prefix}_${i}_${j}`).value);
+            }
+        }
+
+        // Eigenvector Normalization
+        let colSums = new Array(n).fill(0);
+        for (let j = 0; j < n; j++) {
+            for (let i = 0; i < n; i++) colSums[j] += matrix[i][j];
+        }
+
+        let weights = [];
+        for (let i = 0; i < n; i++) {
+            let rowSum = 0;
+            for (let j = 0; j < n; j++) rowSum += (matrix[i][j] / colSums[j]);
+            weights[i] = rowSum / n;
+        }
+
+        // CR Check
+        let lambda = 0;
+        for (let i = 0; i < n; i++) {
+            let ws = 0;
+            for (let j = 0; j < n; j++) ws += matrix[i][j] * weights[j];
+            lambda += ws / weights[i];
+        }
+        lambda /= n;
+        const ci = (lambda - n) / (n - 1);
+        const cr = ci / data.ri[n - 1];
+
+        return { weights, cr };
+    }
+
+    function processCriteria() {
+        const res = calculateAHP('c', data.criteria.length);
+        data.critWeights = res.weights;
+        
+        const status = document.getElementById('critStatus');
+        if (res.cr > 0.1) {
+            status.innerHTML = `<span class="badge badge-fail">CR: ${res.cr.toFixed(4)} - Tidak Konsisten!</span> Mohon perbaiki nilai.`;
+            return;
+        }
+        status.innerHTML = `<span class="badge badge-ok">CR: ${res.cr.toFixed(4)} - Konsisten</span>`;
+        
+        data.currentCritIdx = 0;
+        showAlternativeStep();
+    }
+
+    function showAlternativeStep() {
+        document.getElementById('altSection').classList.remove('hidden');
+        document.getElementById('activeCritName').innerText = data.criteria[data.currentCritIdx];
+        renderPairwiseMatrix('altMatrixDiv', data.alternatives, 'a');
+        window.scrollTo(0, document.body.scrollHeight);
+    }
+
+    function processAlternativeStep() {
+        const res = calculateAHP('a', data.alternatives.length);
+        data.altWeightsMatrix[data.currentCritIdx] = res.weights;
+
+        data.currentCritIdx++;
+        if (data.currentCritIdx < data.criteria.length) {
+            showAlternativeStep();
+        } else {
+            finalizeResults();
+        }
+    }
+
+    function finalizeResults() {
+        document.getElementById('altSection').classList.add('hidden');
+        document.getElementById('finalSection').classList.remove('hidden');
+
+        // Synthesis
+        let finalScores = new Array(data.alternatives.length).fill(0);
+        data.alternatives.forEach((_, aIdx) => {
+            data.criteria.forEach((_, cIdx) => {
+                finalScores[aIdx] += data.altWeightsMatrix[cIdx][aIdx] * data.critWeights[cIdx];
+            });
+        });
+
+        // Table & Ranking
+        let results = data.alternatives.map((name, i) => ({ name, score: finalScores[i] }));
+        results.sort((a, b) => b.score - a.score);
+
+        let html = `<table><tr><th>Ranking</th><th>Alternatif</th><th>Skor Akhir</th></tr>`;
+        results.forEach((r, idx) => {
+            html += `<tr><td>${idx + 1}</td><td>${r.name}</td><td>${r.score.toFixed(4)}</td></tr>`;
+        });
+        html += `</table>`;
+        document.getElementById('finalResultDiv').innerHTML = html;
+
+        renderRankingChart(results);
+    }
+
+    function renderRankingChart(results) {
+        const ctx = document.getElementById('rankingChart').getContext('2d');
+        new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: results.map(r => r.name),
+                datasets: [{
+                    label: 'Skor Preferensi',
+                    data: results.map(r => r.score),
+                    backgroundColor: 'rgba(59, 130, 246, 0.7)',
+                    borderColor: 'rgba(30, 64, 175, 1)',
+                    borderWidth: 2
+                }]
+            },
+            options: {
+                plugins: { legend: { display: false } },
+                scales: { y: { beginAtZero: true, max: 1 } }
+            }
+        });
+    }
+</script>
+
+</body>
+</html>
